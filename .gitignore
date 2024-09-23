@@ -45,3 +45,7 @@ src/main/resources/static/docs
 
 ### Docker ###
 /docker
+
+### security ###
+src/main/resources/application-security.yml
+src/main/resources/credentials.json
