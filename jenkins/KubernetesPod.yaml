@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+spec:
+  nodeSelector:
+    jenkins: true
+  containers:
+    - name: gradle
+      #image: gradle:7.6.1-jdk11
+      image: gradle:8-jdk17
+      command:
+        - cat
+      tty: true
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command:
+        - cat
+      tty: true
+      volumeMounts:
+        - mountPath: '/kaniko/.docker'
+          name: harbor-login
+        - mountPath: '/etc/hosts'
+          name: hosts-file
+    - name: argocd
+      image: argoproj/argo-cd-ci-builder:v1.0.0
+      command:
+        - cat
+      tty: true
+  volumes:
+    - name: harbor-login
+      secret:
+        secretName: harbor-login
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+    - name: hosts-file
+      hostPath:
+        path: /etc/hosts

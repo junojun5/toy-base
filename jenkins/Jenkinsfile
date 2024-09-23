@@ -1,0 +1,240 @@
+pipeline {
+    environment {
+        project_name = "datalearnway-backend"
+        slack_api_url = "https://vzfnyz1b11.execute-api.ap-northeast-2.amazonaws.com/v1/slack-message"
+        slack_channel = "xii_dev_data_learnway_back_noti"
+        slack_ts = ""
+        slack_channelId = "C062PB214RH"
+        slack_message = " "
+        harbor_project_name = "data-learnway"
+        harbor_base_url = "harbor.xiilab.com"
+        harbor_base_registry_url = "${harbor_base_url}/${harbor_project_name}/${project_name}"
+    }
+    agent {
+        kubernetes {
+            yamlFile 'jenkins/KubernetesPod.yaml'
+        }
+    }
+    stages {
+        stage('Start') {
+            environment {
+                def author = sh(returnStdout: true, script: "git --no-pager show -s --format='%an'").trim()
+                def commit_message = sh(returnStdout: true, script: 'git log -1 --pretty=%B').trim()
+            }
+            steps {
+                script {
+                    def response = send_common_noti_message()
+                    def slack_info = readJSON text: response.content;
+                    slackResponse_ts = slack_info.ts
+                    slack_channelId = slack_info.channelId
+                }
+            }
+        }
+        stage('Build Project & Sonarqube Analysis') {
+            environment {
+                sonar_command = get_maven_sonar_command()
+            }
+            steps {
+                script {
+                    send_update_noti_message(":rocket: Build & Deploy Start !!! ", "")
+                }
+                container('gradle') {
+                    withSonarQubeEnv(installationName:'SonarQube') {
+                        /*sh "gradle war ${sonar_command}"*/
+                        sh "gradle clean bootJar ${sonar_command}"
+                    }
+                }
+            }
+            post {
+                success {
+                    script {
+                        send_update_noti_message(":o: Build Project & Sonarqube Analysis Success!!", "")
+                    }
+                }
+                failure {
+                    script {
+                        send_update_noti_message(":x: Build Project & Sonarqube Analysis Failed!!", "")
+                    }
+                }
+            }
+        }
+        stage('Sonarqube Quality Gate') {
+            environment {
+                sonar_url = get_sonar_url()
+            }
+            steps {
+                script {
+                    def qualitygate = waitForQualityGate()
+                    if (qualitygate.status == "OK") {
+                        send_update_noti_message(":o: 소나큐브 분석 상태 : <${sonar_url} | Passed!!> :clap:", "")
+                    }
+                    else {
+                        send_update_noti_message(":x: 소나큐브 분석 상태 : <${sonar_url} | Failed!!>", "")
+                    }
+                }
+            }
+        }
+        stage('Build Container image-dev') {
+            when {
+                anyOf { branch 'develop'; tag "*" }
+            }
+            environment {
+                image_tag_name = get_image_tag_name()
+            }
+            steps {
+                container('kaniko') {
+                    sh "/kaniko/executor -f `pwd`/Dockerfile -c `pwd` --insecure --skip-tls-verify --cache=true --destination=${harbor_base_registry_url}:${image_tag_name}"
+                    sh "/kaniko/executor -f `pwd`/Dockerfile -c `pwd` --insecure --skip-tls-verify --cache=true --destination=${harbor_base_registry_url}:latest-dev"
+                }
+            }
+            post {
+                success {
+                    script {
+                        send_update_noti_message(":o: Build Container Image Success!!!", "")
+                    }
+                }
+                failure {
+                    script {
+                        send_update_noti_message(":x: Build Container Image Failed!!!", "")
+                    }
+                }
+            }
+        }
+        stage('Build Container image-release') {
+            when {
+                anyOf { branch 'release-*'; tag "*" }
+            }
+            environment {
+                image_tag_name = get_image_tag_name()
+            }
+            steps {
+                container('kaniko') {
+                    sh "/kaniko/executor -f `pwd`/Dockerfile -c `pwd` --insecure --skip-tls-verify --cache=true --destination=${harbor_base_registry_url}:${image_tag_name}"
+                }
+            }
+            post {
+                success {
+                    script {
+                        send_update_noti_message(":o: Build Container Image Success!!!", "")
+                    }
+                }
+                failure {
+                    script {
+                        send_update_noti_message(":x: Build Container Image Failed!!!", "")
+                    }
+                }
+            }
+        }
+        stage('docker-compose up') {
+            when {
+                anyOf { branch 'develop'; tag "*" }
+            }
+            steps {
+                script{
+                    def remote = [:]
+                    remote.name = "dev-server"
+                    remote.host = "192.168.2.40"
+                    remote.allowAnyHosts = true
+
+                    withCredentials([sshUserPrivateKey(credentialsId: 'key-for-ssh-command', keyFileVariable: 'identity', passphraseVariable: '', usernameVariable: 'userName')]) {
+                        remote.user = userName
+                        remote.identityFile = identity
+
+                        sshPut remote: remote, from: './docker-compose.yml', into: './docker-compose.yml'
+                        sshPut remote: remote, from: './nginx.conf', into: './nginx.conf'
+                        sshPut remote: remote, from: './50-server.cnf', into: './50-server.cnf'
+
+                        sshCommand sudo: true, remote: remote, command: "\
+                            sudo docker-compose down && \
+                            sudo docker-compose pull && \
+                            sudo docker-compose up -d"
+                    }
+                }
+            }
+        }
+    }
+    post {
+        success {
+            script {
+                send_update_noti_message(":aaw_yeah: Build & Deploy Success !!! ", "SUCCESS")
+            }
+        }
+        failure {
+            script {
+                send_update_noti_message(":alert: Build & Deploy Failed !!! ", "FAILED")
+            }
+        }
+    }
+}
+
+def get_maven_sonar_command() {
+    def maven_sonar_command = "sonarqube -Dsonar.projectKey=${project_name} -Dsonar.projectName=${project_name} "
+    if (env.CHANGE_ID) {
+        maven_sonar_command = maven_sonar_command + "-Dsonar.pullrequest.key=${env.CHANGE_ID} -Dsonar.pullrequest.branch=${env.CHANGE_BRANCH} -Dsonar.pullrequest.base=${env.CHANGE_TARGET}"
+    } else {
+        maven_sonar_command = maven_sonar_command + "-Dsonar.branch.name=${env.BRANCH_NAME}"
+    }
+    return maven_sonar_command
+}
+
+def get_sonar_url() {
+    def sonar_url = "http://sonarqube.xiilab.com/dashboard"
+    if (env.CHANGE_ID) {
+        sonar_url = sonar_url + "?id=${project_name}&pullRequest=${CHANGE_ID}"
+    } else {
+        sonar_url = sonar_url + "?id=${project_name}&branch=${BRANCH_NAME}"
+    }
+    println("sonar_url : " + sonar_url)
+    return sonar_url
+}
+
+def get_kustomize_dir() {
+    def kustomize_dir = "./overlays"
+    if (env.TAG_NAME) {
+        kustomize_dir = kustomize_dir + '/production'
+    } else if (env.BRANCH_NAME == 'develop') {
+        kustomize_dir = kustomize_dir + '/develop'
+    } else if ((env.BRANCH_NAME).startsWith('release-')) {
+        kustomize_dir = kustomize_dir + '/staging'
+    }
+    println("kustomize_dir : " + kustomize_dir)
+    return kustomize_dir
+}
+
+def get_image_tag_name() {
+    def image_tag_name = " "
+    if (env.TAG_NAME) {
+        image_tag_name = "${TAG_NAME}"
+    } else if (env.BRANCH_NAME == 'develop') {
+        image_tag_name = "0.${BUILD_NUMBER}-dev"
+    } else if ((env.BRANCH_NAME).startsWith('release-')) {
+        version = (env.BRANCH_NAME).split('-')[1]
+        image_tag_name = version + ".${BUILD_NUMBER}-stag"
+    }
+    println("image_tag_name : " + image_tag_name)
+    return image_tag_name
+}
+/*
+def update_slack_message(message) {
+    slack_message = slack_message + "\n" + message
+    slackSend(color: "warning", channel: slack_channelId, message: slack_message, timestamp: slackResponse_ts)
+}*/
+
+def send_common_noti_message() {
+    def params = """
+               {"project_name": "${project_name}", "job_name": "${JOB_NAME}", "build_number": "${BUILD_NUMBER}", \
+               "build_url": "${BUILD_URL}", "branch_name": "${BRANCH_NAME}", "author": "${author}", \
+               "commit_message": "${commit_message}", "channel": "${slack_channel}", "color": "warning"}
+               """
+    def response = httpRequest responseHandle:'STRING', acceptType: 'APPLICATION_JSON_UTF8', contentType: 'APPLICATION_JSON_UTF8', httpMode: 'POST', requestBody: params, url: "${slack_api_url}"
+    return response
+}
+
+def send_update_noti_message(update_message, accessory_image_type) {
+    slack_message = slack_message + update_message + '\n'
+    def params = """
+               {"channel": "${slack_channelId}", "color": "good", "ts": "${slackResponse_ts}", "update_message": "${slack_message}", "accessory_image_type": "${accessory_image_type}"}
+               """
+    def response = httpRequest responseHandle:'STRING', acceptType: 'APPLICATION_JSON_UTF8', contentType: 'APPLICATION_JSON_UTF8', httpMode: 'POST', requestBody: params, url: "${slack_api_url}"
+    return response
+}

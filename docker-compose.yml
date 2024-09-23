@@ -1,0 +1,54 @@
+version: "3.7"
+
+services:
+  nginx:
+    image: harbor.xiilab.com/library/nginx:latest
+    ports:
+      - "80:80"
+    container_name: nginx-proxy
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - nginx_volume:/var/log/nginx
+    depends_on:
+      - datalearnway-backend
+      - datalearnway-frontend
+
+  datalearnway-frontend:
+    image: harbor.xiilab.com/data-learnway/datalearnway-frontend:latest-dev
+    pull_policy: always
+    ports:
+      - "3000:3000"
+    container_name: datalearnway-frontend
+    depends_on:
+      - datalearnway-backend
+
+  datalearnway-backend:
+    image: harbor.xiilab.com/data-learnway/datalearnway-backend:latest-dev
+    pull_policy: always
+    ports:
+      - "8080:8080"
+    container_name: datalearnway-backend
+    depends_on:
+      - mariadb
+    volumes:
+      - data_volume:/usr/local/uploadFile/data_learnway/uploadImg
+
+  mariadb:
+    image: mariadb:10.5.8-focal
+    ports:
+      - "23306:23306"
+    volumes:
+      - ./docker/schema/:/docker-entrypoint-initdb.d/
+      - ./50-server.cnf:/etc/mysql/mariadb.conf.d/50-server.cnf
+      - maria_volume:/var/lib/mysql
+    environment:
+      MYSQL_USER: xiilab
+      MYSQL_PASSWORD: xiirocks
+      MYSQL_DATABASE: data_learnway
+      MYSQL_ROOT_PASSWORD: xiirocks
+    container_name: datalearnway-db
+
+volumes:
+  maria_volume:
+  data_volume:
+  nginx_volume:

@@ -1,0 +1,172 @@
+buildscript {
+    ext {
+        // restdocs-api-spec: version 변수 설정
+        set('restdocsApiSpecVersion', '0.18.4')
+        // Querydsl 설정부
+        set('querydslSrcDir', file('src/main/generated'))
+        // swaggerUi: swaggerUI 문서 생성 위치 명시
+        set('swaggerUi', file("src/main/resources/static/docs/swagger-ui"))
+        profile = (!project.hasProperty('profile') || !profile) ? 'local' : profile
+    }
+}
+
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.1.0'
+    id 'io.spring.dependency-management' version '1.1.0'
+    // restdocs-api-spec: Spring REST Docs의 결과물을 OpenAPI3 스펙으로 변환
+    id 'com.epages.restdocs-api-spec' version "${restdocsApiSpecVersion}"
+    //swagger generator: OpenAPI3 스펙을 기반으로 SwaggerUI 생성
+    id 'org.hidetake.swagger.generator' version '2.18.2'
+    // sonarqube 플러그인 추가 CI
+    id 'org.sonarqube' version '4.0.0.2929'
+}
+
+group = 'com.xiilab'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = '17'
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+// OpenAPI 스펙 생성 설정 명시
+openapi3 {
+    if (profile == 'dev') {
+        server = "[dev]/data_learnway/"
+    } else server = "http://localhost:8080/data_learnway/"
+    title = "Data Studio Test API Documentation"
+    description = "Spring REST Docs with SwaggerUI"
+    version = "0.0.1-SNAPSHOT"
+    format = "yaml"
+    outputFileNamePrefix = 'openapi3'
+    // outputDirectory: openapi3.yaml이 저장될 위치, 명시하지 않으면 기본값인 "/build/api-spec" 경로에 저장됨
+    // outputDirectory = "."
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation "org.springframework.boot:spring-boot-starter-security"
+    implementation group: 'mysql', name: 'mysql-connector-java', version: '8.0.28'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.0.2'
+    implementation("com.github.gavlyukovskiy:p6spy-spring-boot-starter:1.9.0")
+
+    // JWT 설정
+    implementation group: 'io.jsonwebtoken', name: 'jjwt-api', version: '0.11.5'
+    runtimeOnly group: 'io.jsonwebtoken', name: 'jjwt-impl', version: '0.11.5'
+    runtimeOnly group: 'io.jsonwebtoken', name: 'jjwt-jackson', version: '0.11.5'
+    // -- JWT --
+
+    // QueryDSL 설정
+    implementation "com.querydsl:querydsl-jpa:5.0.0:jakarta"
+    annotationProcessor "com.querydsl:querydsl-apt:${dependencyManagement.importedProperties['querydsl.version']}:jakarta"
+    annotationProcessor "jakarta.annotation:jakarta.annotation-api"
+    annotationProcessor "jakarta.persistence:jakarta.persistence-api"
+    // -- QueryDSL ---
+
+    // Thymeleaf
+    implementation 'nz.net.ultraq.thymeleaf:thymeleaf-layout-dialect'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
+    // -- Thymeleaf --
+
+    // Google API
+    implementation 'com.google.apis:google-api-services-drive:v3-rev20220815-2.0.0'
+    implementation 'com.google.api-client:google-api-client:2.0.0'
+    implementation 'com.google.auth:google-auth-library-oauth2-http:1.11.0'
+    // -- Google API --
+
+    // 파일 처리 편의기능 제공 라이브러리
+    implementation 'commons-io:commons-io:2.11.0'
+    // -- FileUtils --
+
+    // Java ssh 원격 접속을 위한 라이브러리
+    implementation 'com.jcraft:jsch:0.1.55'
+    // -- Jsch --
+
+    // Spring Rest Docs + Swagger UI
+    testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
+    testImplementation "com.epages:restdocs-api-spec-mockmvc:${restdocsApiSpecVersion}"
+    swaggerUI 'org.webjars:swagger-ui:4.11.1'
+    // -- Spring Rest Docs + Swagger UI
+
+    // Tus Protocol
+    implementation "me.desair.tus:tus-java-server:1.0.0-3.0"
+    // -- Tus Protocol
+
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation('org.springframework.boot:spring-boot-starter-test')
+    testImplementation('org.junit.jupiter:junit-jupiter')
+    testImplementation('org.junit.jupiter:junit-jupiter-api')
+    testRuntimeOnly('org.junit.jupiter:junit-jupiter-engine')
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "org.testcontainers:testcontainers:1.18.3"
+    testImplementation 'com.h2database:h2:2.1.214'
+    testImplementation "org.testcontainers:junit-jupiter:1.18.3"
+    testImplementation "org.testcontainers:mariadb:1.18.3"
+    testImplementation 'org.mariadb.jdbc:mariadb-java-client:3.1.2' // 사용하는 버전에 맞게 변경해야 합니다
+    testImplementation 'org.mockito:mockito-inline:3.6.0'
+}
+
+/*
+tasks.named('test') {
+    useJUnitPlatform()
+}*/
+test {
+    useJUnitPlatform()
+}
+
+clean {
+    delete querydslSrcDir
+    delete swaggerUi
+}
+
+tasks.withType(JavaCompile) {
+    options.generatedSourceOutputDirectory = querydslSrcDir
+}
+
+// "openapi3.yaml" 파일 기반으로 swagger에서 필요 파일 만들 수 있도록 설정
+swaggerSources {
+    sample {
+        setInputFile(file("${project.buildDir}/api-spec/openapi3.yaml"))
+    }
+}
+
+// GenerateSwaggerUI 태스크가, openapi3 task 를 의존하도록 설정
+tasks.withType(GenerateSwaggerUI) {
+    dependsOn 'openapi3'
+}
+
+// 생성된 SwaggerUI 를 jar 에 포함시키기 위해 build/resources 경로로 복사
+task copySwaggerUI(type: Copy) {
+    dependsOn 'generateSwaggerUISample'
+
+    def generateSwaggerUISampleTask = tasks.named('generateSwaggerUISample', GenerateSwaggerUI).get()
+
+    from file("${generateSwaggerUISampleTask.outputDir}")
+    into swaggerUi
+}
+
+// bootJar 실행 전, copySwaggerUI 를 실행하도록 설정
+bootJar {
+    dependsOn 'copySwaggerUI'
+    archivesBaseName = 'data_learnway'
+    archiveFileName = 'data_learnway-0.0.1-SNAPSHOT.jar'
+    archiveVersion = "0.0.1"
+}
+

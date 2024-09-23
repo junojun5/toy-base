@@ -1,0 +1,86 @@
+server:
+  servlet:
+    context-path: /data_learnway
+
+spring:
+  profiles:
+    group:
+      "local": "local,common,security"
+      "dev": "dev,common,security"
+      "release": "release,common,security"
+    default: local
+
+---
+spring:
+  config:
+    activate:
+      on-profile: "local"
+#  datasource:
+#    url: jdbc:mysql://192.168.2.141:30025/test?useUnicode=true&useJDBCCompliantTimezoneShift=true&useLegacyDatetimeCode=false&serverTimezone=Asia/Seoul&useSSL=false&allowMultiQueries=true&noAccessToProcedureBodies=true&zeroDateTimeBehavior=convertToNull
+#    username: root
+#    password: xiirocks3#
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+#    max-lifetime: 1000
+#    idle-timeout: 30000
+#    connection-test-query: select 1
+#    connection-timeout: 30000
+#    minimum-idle: 10
+#    maximum-pool-size: 10
+#  jpa:
+#    hibernate:
+#      ddl-auto: none
+#      naming:
+#        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+#    properties:
+#      hibernate:
+#        default_batch_fetch_size: 100
+#    database: mysql
+#    database-platform: org.hibernate.dialect.MySQL8Dialect
+#    open-in-view: false
+#    data:
+#      web:
+#        pageable:
+#          default-page-size: 10
+#          max-page-size: 2000
+#  decorator:
+#    datasource:
+#      p6spy:
+#        enable-logging: true
+---
+spring:
+  config:
+    activate:
+      on-profile: "dev"
+---
+spring:
+  config:
+    activate:
+      on-profile: "release"
+---
+spring:
+  config:
+    activate:
+      on-profile: "common"
+  thymeleaf:
+    cache: false
+  messages:
+    basename: messages
+    encoding: utf-8
+    fallback-to-system-locale: false
+    always-use-message-format: true
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: -1
+
+#file:
+#  root:
+#    directory:
+#      windows: C:/Users/xiilab/Desktop/data_learnway
+#      linux: /usr/local/uploadFile/data_learnway
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    csrf:
+      enabled: false
